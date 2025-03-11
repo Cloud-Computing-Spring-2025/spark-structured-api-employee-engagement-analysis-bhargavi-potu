@@ -124,17 +124,22 @@ You can run the analysis tasks either locally or using Docker.
 ### **Task 1: Identify Departments with High Satisfaction and Engagement**
 
 **Objective:**
-Determine which departments have more than **10%** of their employees with a **Satisfaction Rating greater than 4** and an **Engagement Level of 'High'**.
+Determine which departments have more than **1%** of their employees with a **Satisfaction Rating greater than 4** and an **Engagement Level of 'High'**.
 
 **Script:**  
 `src/task1_identify_departments_high_satisfaction.py`
 
 ```python
+
+# task1_identify_departments_high_satisfaction.py
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import col, count, format_string
 
 def initialize_spark(app_name="Task1_Identify_Departments"):
-    spark = SparkSession.builder.appName(app_name).getOrCreate()
+    spark = SparkSession.builder \
+        .appName(app_name) \
+        .config("spark.sql.shuffle.partitions", "50") \
+        .getOrCreate()
     return spark
 
 def load_data(spark, file_path):
@@ -143,25 +148,38 @@ def load_data(spark, file_path):
     return df
 
 def identify_departments_high_satisfaction(df):
+    # Filter employees based on SatisfactionRating > 4 and EngagementLevel == 'High'
     filtered_df = df.filter((col("SatisfactionRating") > 4) & (col("EngagementLevel") == "High"))
+    
+    # Count qualified employees per department
     department_counts = filtered_df.groupBy("Department").agg(count("*").alias("QualifiedCount"))
+    
+    # Count total employees per department
     total_counts = df.groupBy("Department").agg(count("*").alias("TotalCount"))
+
+    # Calculate percentages and filter departments with more than 10%
     percentage_df = department_counts.join(total_counts, "Department")\
                                     .withColumn("Percentage", format_string("%.2f%%", (col("QualifiedCount") / col("TotalCount") * 100)))\
                                     .filter(col("Percentage").substr(0, 4) > "1.00")
+
     return percentage_df.select("Department", "Percentage")
+
+def write_output(result_df, output_path):
+    # Ensure the result is written with headers and in a single part file
+    result_df.coalesce(1).write.option("header", "true").csv(output_path, mode='overwrite')
 
 def main():
     spark = initialize_spark()
-    input_file = "input/employee_data.csv"
-    output_file = "outputs/departments_high_satisfaction.csv"
+    input_file = "/workspaces/spark-structured-api-employee-engagement-analysis-bhargavi-potu/input/employee_data.csv"
+    output_file = "/workspaces/spark-structured-api-employee-engagement-analysis-bhargavi-potu/outputs/departments_high_satisfaction.csv"
     df = load_data(spark, input_file)
     result_df = identify_departments_high_satisfaction(df)
-    result_df.coalesce(1).write.option("header", "true").csv(output_file, mode='overwrite')
+    write_output(result_df, output_file)
     spark.stop()
 
 if __name__ == "__main__":
     main()
+
 ```
 
 **Expected Output (departments_high_satisfaction.csv):**
@@ -184,46 +202,6 @@ Identify employees who feel valued (**Satisfaction Rating ≥ 4**) but have **no
 `src/task2_valued_no_suggestions.py`
 
 ```python
-from pyspark.sql import SparkSession
-from pyspark.sql.functions import col, count
-
-def main():
-    spark = SparkSession.builder.appName("Task2_Valued_No_Suggestions").getOrCreate()
-    df = spark.read.csv("input/employee_data.csv", header=True, inferSchema=True)
-    valued_df = df.filter((col("SatisfactionRating") >= 4) & (col("ProvidedSuggestions") == False))
-    number = valued_df.count()
-    total = df.count()
-    proportion = (number / total * 100)
-    with open("outputs/valued_no_suggestions.txt", 'w') as f:
-        f.write(f"Number of Employees Feeling Valued without Suggestions: {number}\n")
-        f.write(f"Proportion: {proportion:.2f}%\n")
-    spark.stop()
-
-if __name__ == "__main__":
-    main()
-```
-
-
-
-*Expected Output (departments_high_satisfaction.csv):*
-
-Department,Percentage
-Finance,4.35%
-Sales,5.88%
-Marketing,9.09%
-IT,15.00%
-
-
----
-
-### *Task 2: Who Feels Valued but Didn’t Suggest Improvements?*
-*Objective:*
-Identify employees who feel valued *(Satisfaction Rating ≥ 4)* but have not provided suggestions. This helps analyze whether employees who feel appreciated are actively contributing suggestions for improvements within the organization.
-
-*Script:*  
-src/task2_valued_no_suggestions.py
-
-python
 # task2_valued_no_suggestions.py
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import col, count
@@ -262,26 +240,27 @@ def main():
 
 if __name__ == "__main__":
     main()
+```
 
 
 
-*Expected Output (valued_no_suggestions.txt):*
-
+**Expected Output (departments_high_satisfaction.csv):**
+```
 Number of Employees Feeling Valued without Suggestions: 18
 Proportion: 18.00%
-
+```
 
 ---
+### **Task 3: Compare Engagement Levels Across Job Titles**
 
-### *Task 3: Compare Engagement Levels Across Job Titles*
+**Objective:**
+Examine how engagement levels vary across different job titles and determine which **Job Title** has the highest **average Engagement Level**.
 
-*Objective:*
-Examine how engagement levels vary across different job titles and determine which *Job Title* has the highest *average Engagement Level*.
+**Script:**  
+`src/task2_valued_no_suggestions.py`
 
-*Script:*  
-src/task3_compare_engagement_levels.py
+```python
 
-python
 # task3_compare_engagement_levels.py
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import col, when, avg, round as spark_round
@@ -324,11 +303,12 @@ def main():
 
 if __name__ == "__main__":
     main()
+```
 
 
 
-*Expected Output (engagement_levels_job_titles.csv):*
-
+**Expected Output (departments_high_satisfaction.csv):**
+```
 JobTitle,AvgEngagementLevel
 Coordinator,1.82
 Developer,2.14
@@ -336,11 +316,10 @@ Executive,1.97
 Analyst,1.95
 Support,1.6
 Manager,1.88
-
+```
 
 ---
 
 ## *Conclusion*
 This project applies *PySpark* to analyze employee engagement and satisfaction data, identifying insights into employee behavior and department performance. By running the three analysis tasks, key trends in employee satisfaction and engagement are revealed, helping organizations make data-driven decisions.
 
-For any issues or questions, refer to the *comments inside each script file* or check the *debugging logs* when running the tasks.
